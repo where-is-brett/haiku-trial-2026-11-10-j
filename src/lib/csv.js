@@ -43,6 +43,7 @@ export function parseCsv(text) {
       field += ch;
     }
   }
+  if (inQuotes) throw new Error('unterminated quoted field');
   if (field !== '' || row.length > 0) endRow();
   return rows;
 }

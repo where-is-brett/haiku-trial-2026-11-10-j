@@ -18,3 +18,7 @@ test('CRLF lines and a trailing blank line add no row', () => {
 test('a doubled quote inside quotes gives one quote', () => {
   assert.deepEqual(parseCsv('"say ""hi""",1'), [['say "hi"', '1']]);
 });
+
+test('an unterminated quoted field is refused, not swallowed', () => {
+  assert.throws(() => parseCsv('a,"b\nc,d\n'), /unterminated quoted field/);
+});
