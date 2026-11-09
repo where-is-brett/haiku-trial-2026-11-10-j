@@ -43,3 +43,13 @@ export const labels = {
   income: 'Income',
   other: 'Other',
 };
+
+// Returns the category key for a transaction description, or 'other' when no shop name matches.
+export function categoryFor(description) {
+  if (typeof description !== 'string' || description === '') return 'other';
+  const text = description.toLowerCase();
+  for (const { shop, category } of rules) {
+    if (text.includes(shop.toLowerCase())) return category;
+  }
+  return 'other';
+}
