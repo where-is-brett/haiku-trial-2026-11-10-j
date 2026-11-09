@@ -1,0 +1,78 @@
+// tests/categories.test.js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { rules, labels, categoryFor } from '../src/lib/categories.js';
+
+test('every category key has a label', () => {
+  for (const key of ['groceries', 'eating_out', 'transport', 'bills', 'shopping', 'health', 'income', 'other']) {
+    assert.ok(labels[key], `missing label for ${key}`);
+  }
+  assert.equal(labels.eating_out, 'Eating out');
+});
+
+test('the rules list every shop from the spec', () => {
+  assert.equal(rules.length, 27);
+});
+
+// The spec's shop-to-category table, copied literally from .wheelhouse/feature/approved.md.
+const specTable = [
+  ['Greenbarrow Fresh', 'groceries'],
+  ['Pennywhistle Market', 'groceries'],
+  ['Lowtide Grocers', 'groceries'],
+  ['Harvest Lane Foods', 'groceries'],
+  ['Pasta, Pizza & Co', 'eating_out'],
+  ['Kestrel Coffee Bar', 'eating_out'],
+  ['Saltbush Noodle House', 'eating_out'],
+  ['Ember Grill', 'eating_out'],
+  ['Waverly Fuel Stop', 'transport'],
+  ['Tramline Fares', 'transport'],
+  ['Lantern Rideshare', 'transport'],
+  ['Northgate Parking', 'transport'],
+  ['Brightfield Power', 'bills'],
+  ['Clearwater Utilities', 'bills'],
+  ['Skyline Broadband', 'bills'],
+  ['Hollis Insurance', 'bills'],
+  ['Marlowe Homewares', 'shopping'],
+  ['Quillon Books', 'shopping'],
+  ['Fernhill Outfitters', 'shopping'],
+  ['Pixel Parade Tech', 'shopping'],
+  ['Larkspur Pharmacy', 'health'],
+  ['Elmgrove Physio', 'health'],
+  ['Cobalt Dental', 'health'],
+  ['Sunnyvale Optical', 'health'],
+  ['Brightwave Payroll', 'income'],
+  ['Tidepool Interest', 'income'],
+  ['Oakridge Dividends', 'income'],
+];
+
+test('each listed shop maps to its category, ignoring case', () => {
+  for (const [shop, category] of specTable) {
+    assert.equal(categoryFor(shop), category, shop);
+    assert.equal(categoryFor(shop.toUpperCase()), category, shop.toUpperCase());
+    assert.equal(categoryFor(shop.toLowerCase()), category, shop.toLowerCase());
+  }
+});
+
+test('the rules match the spec table exactly', () => {
+  assert.deepEqual(rules.map(({ shop, category }) => [shop, category]), specTable);
+});
+
+test('a shop name with a reference suffix still matches', () => {
+  assert.equal(categoryFor('Lowtide Grocers REF 4817'), 'groceries');
+});
+
+test('a description with no shop name gives other', () => {
+  assert.equal(categoryFor('Unknown Trader 99'), 'other');
+  assert.equal(categoryFor(''), 'other');
+  assert.equal(categoryFor(null), 'other');
+  assert.equal(categoryFor(undefined), 'other');
+});
+
+test('no two shop names overlap', () => {
+  const names = rules.map(({ shop }) => shop.toLowerCase());
+  for (const a of names) {
+    for (const b of names) {
+      if (a !== b) assert.equal(b.includes(a), false, `"${a}" appears inside "${b}"`);
+    }
+  }
+});
