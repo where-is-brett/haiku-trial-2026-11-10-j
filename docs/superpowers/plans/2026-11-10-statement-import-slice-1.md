@@ -1,14 +1,12 @@
 # Import a statement from /import Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** A CSV uploaded as `statement` on `/import` adds its rows, skips duplicates, and reports `Added n, skipped n`; a file that is not a statement adds nothing and gets a plain error.
 
 **Architecture:** The server is split so that `createApp({ db, statementImport })` can be tested without listening on a port. CSV reading, statement reading and the import each get their own small module under `src/lib/`. The whole file is read and checked before any row is written, and the writes run in one SQLite transaction. The route sits behind the flag `STATEMENT_IMPORT`, which is off unless set to `on`.
 
 **Tech Stack:** Node 22.13+ built-ins only (`node:sqlite`, `node:http`, global `Request` and `FormData`, `node:test`). No new dependencies.
 
-**Spec:** `.wheelhouse/feature/approved.md` (slice 1 of 2)
+**Spec:** the director's approved design for statement import (slice 1 of 2)
 
 ## Global Constraints
 
@@ -19,7 +17,6 @@
 - Header row must be exactly `Date,Description,Amount`.
 - A row is a duplicate when a row stored before this import has the same date, description and cents.
 - Feature flag: `STATEMENT_IMPORT`, on only when the environment value is `on`. Off means `/import` answers 404 like any unknown path.
-- Scratch files go in `.wheelhouse/tmp/`, never `/tmp`.
 
 ## Review Focus
 
@@ -29,7 +26,7 @@
 4. Two identical lines within one statement are both added on the first import, because duplicates are checked against rows stored before the import. Test in Task 3.
 5. A bracketed amount with a thousands separator, `(1,234.50)`, is read as `-123450`. Test in Task 3.
 
-## Decisions taken in this plan (logged by the builder)
+## Decisions taken in this plan
 
 - **Brackets are handled in the import code, not in `parseAmount`.** `parseAmount("(40.00)")` currently returns `4000`. `readAmount` in `src/lib/import.js` turns a bracketed amount into a negative before the call. This leaves `money.js` untouched, as the spec's constraint says. The alternative (change `parseAmount` itself) is put to the director as a question; the seam is one function, so the answer is a small change.
 - The flag is read once in `server.js` from `process.env.STATEMENT_IMPORT` and passed into `createApp`; tests pass the flag directly.
