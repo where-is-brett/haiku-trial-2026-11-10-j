@@ -89,3 +89,66 @@ test('with the flag off, /import is a 404 for GET and POST', async () => {
   assert.equal(await post.text(), 'Not found');
   assert.equal(countRows(db), 0);
 });
+
+const CAP = 1048576;
+const TOO_LARGE = 'This file is too large to import. The limit is 1 MB.';
+
+// A statement of exactly `bytes` bytes: a valid header, then rows with
+// distinct descriptions, the last row padded out to the size.
+function statementOfBytes(bytes, rowCount = 200) {
+  const lines = ['Date,Description,Amount'];
+  for (let i = 1; i < rowCount; i++) lines.push(`03/01/2026,Shop ${i},-4.50`);
+  const fixed = lines.join('\n') + '\n';
+  const last = '03/01/2026,Shop ,-4.50';
+  const pad = bytes - fixed.length - last.length;
+  return fixed + `03/01/2026,Shop ${'x'.repeat(pad)},-4.50`;
+}
+
+test('an upload over 1 MB is refused with a plain error and adds nothing', async () => {
+  const db = openLedger(':memory:');
+  const base = await start(db);
+  const res = await fetch(`${base}/import`, { method: 'POST', body: statementForm(statementOfBytes(CAP + 1)) });
+  assert.equal(res.status, 413);
+  assert.match(res.headers.get('content-type'), /^text\/plain/);
+  assert.equal(await res.text(), TOO_LARGE);
+  assert.equal(countRows(db), 0);
+});
+
+test('an upload at the 1 MB cap is still imported', async () => {
+  const db = openLedger(':memory:');
+  const base = await start(db);
+  // Leave room in the cap for the multipart headers and boundaries.
+  const res = await fetch(`${base}/import`, {
+    method: 'POST',
+    body: statementForm(statementOfBytes(CAP - 1024)),
+  });
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /Added 200, skipped 0/);
+  assert.equal(countRows(db), 200);
+});
+
+test('a chunked upload over 1 MB is refused too', async () => {
+  const db = openLedger(':memory:');
+  const base = await start(db);
+  const boundary = 'statementboundary';
+  const head = `--${boundary}\r\nContent-Disposition: form-data; name="statement"; filename="statement.csv"\r\nContent-Type: text/csv\r\n\r\n`;
+  const tail = `\r\n--${boundary}--\r\n`;
+  const bytes = new TextEncoder().encode(head + statementOfBytes(CAP + 1) + tail);
+  const stream = new ReadableStream({
+    start(controller) {
+      for (let offset = 0; offset < bytes.length; offset += 65536) {
+        controller.enqueue(bytes.subarray(offset, offset + 65536));
+      }
+      controller.close();
+    },
+  });
+  const res = await fetch(`${base}/import`, {
+    method: 'POST',
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    body: stream,
+    duplex: 'half',
+  });
+  assert.equal(res.status, 413);
+  assert.equal(await res.text(), TOO_LARGE);
+  assert.equal(countRows(db), 0);
+});

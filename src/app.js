@@ -41,9 +41,39 @@ function sendText(res, status, text) {
   res.end(text);
 }
 
+const MAX_UPLOAD_BYTES = 1048576;
+const TOO_LARGE_MESSAGE = 'This file is too large to import. The limit is 1 MB.';
+
+// Reads the whole request body into a Buffer, counting bytes as they arrive.
+// Resolves to null as soon as the count passes the limit, without keeping the bytes.
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > limit) {
+        req.removeAllListeners('data');
+        req.pause();
+        resolve(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks, total)));
+    req.on('error', reject);
+  });
+}
+
 async function handleImportPost(db, req, res, url) {
   try {
-    const request = new Request(url, { method: 'POST', headers: req.headers, body: req, duplex: 'half' });
+    const body = await readBody(req, MAX_UPLOAD_BYTES);
+    if (body === null) {
+      res.writeHead(413, { 'content-type': 'text/plain; charset=utf-8', connection: 'close' });
+      res.end(TOO_LARGE_MESSAGE);
+      return;
+    }
+    const request = new Request(url, { method: 'POST', headers: req.headers, body });
     const form = await request.formData();
     const file = form.get('statement');
     if (!(file instanceof Blob)) {
