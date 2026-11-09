@@ -30,7 +30,8 @@ export function parseCsv(text) {
       } else {
         field += ch;
       }
-    } else if (ch === '"') {
+    } else if (ch === '"' && field === '') {
+      // A quote opens a quoted field only as the field's first character.
       inQuotes = true;
     } else if (ch === ',') {
       endField();
