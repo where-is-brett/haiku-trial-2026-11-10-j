@@ -13,13 +13,29 @@ export class NotAStatementError extends Error {
   }
 }
 
+// The only amount forms read: an optional leading minus, or one pair of brackets with no minus inside.
+// Digits may carry comma thousands groups and at most two decimal places.
+const PLAIN_AMOUNT = /^-?(\d+|\d{1,3}(,\d{3})+)(\.\d{1,2})?$/;
+const BRACKETED_AMOUNT = /^\((\d+|\d{1,3}(,\d{3})+)(\.\d{1,2})?\)$/;
+
 // A bracketed amount such as (40.00) is money going back, so it reads as negative.
+// Any other form is refused rather than read as a guess.
 export function readAmount(text) {
   const trimmed = text.trim();
-  if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+  if (BRACKETED_AMOUNT.test(trimmed)) {
     return -Math.abs(parseAmount(trimmed.slice(1, -1)));
   }
-  return parseAmount(text);
+  if (PLAIN_AMOUNT.test(trimmed)) {
+    return parseAmount(trimmed);
+  }
+  throw new NotAStatementError();
+}
+
+// A real day: month 1 to 12, and a day within that month's length, leap years included.
+function isRealDate(day, month, year) {
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= lengths[month - 1];
 }
 
 // Reads every row of a statement. Throws NotAStatementError for any bad file, before anything is written.
@@ -40,6 +56,8 @@ export function readStatement(text) {
     if (fields.length !== 3) throw new NotAStatementError();
     const [date, description, amount] = fields;
     if (!DATE_PATTERN.test(date)) throw new NotAStatementError();
+    const [day, month, year] = date.split('/').map(Number);
+    if (!isRealDate(day, month, year)) throw new NotAStatementError();
     const cents = readAmount(amount);
     if (!Number.isInteger(cents)) throw new NotAStatementError();
     return { date: parseDate(date), description, cents };

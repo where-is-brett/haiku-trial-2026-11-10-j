@@ -40,8 +40,8 @@ test('brackets and minus signs are read as money coming back', () => {
   assert.equal(readAmount('(1,234.50)'), -123450);
 });
 
-test('a bracketed amount with a minus inside is still money coming back', () => {
-  assert.equal(readAmount('(-40.00)'), -4000);
+test('a bracketed amount with a minus inside is refused', () => {
+  assert.throws(() => readAmount('(-40.00)'), NotAStatementError);
 });
 
 test('a plain amount is read as positive cents', () => {
@@ -67,4 +67,53 @@ test('an unterminated quote is a plain error, adds nothing', () => {
   const text = `${HEADER}03/08/2026,"Kestrel,6.50\n`;
   assert.throws(() => importStatement(db, text), NotAStatementError);
   assert.equal(rowCount(db), 0);
+});
+
+function storedRows(db) {
+  return db.prepare('SELECT date, description, cents FROM transactions ORDER BY id').all().map((row) => ({ ...row }));
+}
+
+test('a day that does not exist in its month is refused and stores nothing', () => {
+  for (const date of ['31/02/2026', '29/02/2026', '31/04/2026']) {
+    const db = openLedger(':memory:');
+    assert.throws(() => importStatement(db, `${HEADER}${date},Kestrel,6.50\n`), NotAStatementError, date);
+    assert.equal(rowCount(db), 0);
+  }
+});
+
+test('a month above 12, or a zero day and month, is refused and stores nothing', () => {
+  for (const date of ['08/25/2026', '00/00/0000']) {
+    const db = openLedger(':memory:');
+    assert.throws(() => importStatement(db, `${HEADER}${date},Kestrel,6.50\n`), NotAStatementError, date);
+    assert.equal(rowCount(db), 0);
+  }
+});
+
+test('a leap day is stored as its real date', () => {
+  const db = openLedger(':memory:');
+  importStatement(db, `${HEADER}29/02/2028,Kestrel Coffee Bar,6.50\n`);
+  assert.deepEqual(storedRows(db), [{ date: '2028-02-29', description: 'Kestrel Coffee Bar', cents: 650 }]);
+});
+
+test('an amount in a form the reader does not know is refused and stores nothing', () => {
+  const amounts = ['"12,50"', '"1.234,56"', '1e5', '6.5.0', '40.00-', '£-40.00', '$(40.00)', '(40.00', '−40.00'];
+  for (const amount of amounts) {
+    const db = openLedger(':memory:');
+    assert.throws(() => importStatement(db, `${HEADER}03/08/2026,Kestrel,${amount}\n`), NotAStatementError, amount);
+    assert.equal(rowCount(db), 0);
+  }
+});
+
+test('accepted amount forms are stored with their sign and cents', () => {
+  const db = openLedger(':memory:');
+  importStatement(
+    db,
+    `${HEADER}01/08/2026,Bracketed,(40.00)\n02/08/2026,Minus,-2100.00\n03/08/2026,Grouped,"1,234.50"\n04/08/2026,Grouped bracket,"(1,234.50)"\n`,
+  );
+  assert.deepEqual(storedRows(db), [
+    { date: '2026-08-01', description: 'Bracketed', cents: -4000 },
+    { date: '2026-08-02', description: 'Minus', cents: -210000 },
+    { date: '2026-08-03', description: 'Grouped', cents: 123450 },
+    { date: '2026-08-04', description: 'Grouped bracket', cents: -123450 },
+  ]);
 });
