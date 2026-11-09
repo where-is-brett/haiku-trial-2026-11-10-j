@@ -32,3 +32,12 @@ test('a description with no shop name gives other', () => {
   assert.equal(categoryFor(null), 'other');
   assert.equal(categoryFor(undefined), 'other');
 });
+
+test('no two shop names overlap', () => {
+  const names = rules.map(({ shop }) => shop.toLowerCase());
+  for (const a of names) {
+    for (const b of names) {
+      if (a !== b) assert.equal(b.includes(a), false, `"${a}" appears inside "${b}"`);
+    }
+  }
+});
