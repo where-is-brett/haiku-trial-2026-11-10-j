@@ -45,3 +45,15 @@ test('a stray quote in one row does not swallow the rows after it', () => {
   assert.deepEqual(rows[2], ['04/08/2026', 'Lowtide Grocers', '8.00']);
   assert.deepEqual(rows[3], ['05/08/2026', 'Marlowe "Homewares', '20.00']);
 });
+
+test('a closing quote followed by other text is refused', () => {
+  assert.throws(() => parseCsv('a,"b"c,d'), /malformed quoted field/);
+});
+
+test('a closing quote followed by a comma is accepted', () => {
+  assert.deepEqual(parseCsv('a,"b",c'), [['a', 'b', 'c']]);
+});
+
+test('a closing quote followed by a line break is accepted', () => {
+  assert.deepEqual(parseCsv('a,"b"\nc'), [['a', 'b'], ['c']]);
+});

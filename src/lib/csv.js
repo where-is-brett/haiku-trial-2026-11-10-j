@@ -26,6 +26,11 @@ export function parseCsv(text) {
         field += '"';
         i += 1;
       } else if (ch === '"') {
+        // A closing quote must be followed by a comma, a line break or the end of input.
+        const next = source[i + 1];
+        if (next !== undefined && next !== ',' && next !== '\r' && next !== '\n') {
+          throw new Error('malformed quoted field');
+        }
         inQuotes = false;
       } else {
         field += ch;

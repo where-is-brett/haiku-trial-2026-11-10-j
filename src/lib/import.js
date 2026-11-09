@@ -55,6 +55,8 @@ export function readStatement(text) {
   return body.map((fields) => {
     if (fields.length !== 3) throw new NotAStatementError();
     const [date, description, amount] = fields;
+    // A description spanning lines is not a single statement line, so it is refused.
+    if (/[\r\n]/.test(description)) throw new NotAStatementError();
     if (!DATE_PATTERN.test(date)) throw new NotAStatementError();
     const [day, month, year] = date.split('/').map(Number);
     if (!isRealDate(day, month, year)) throw new NotAStatementError();

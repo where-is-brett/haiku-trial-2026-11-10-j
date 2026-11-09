@@ -69,6 +69,20 @@ test('an unterminated quote is a plain error, adds nothing', () => {
   assert.equal(rowCount(db), 0);
 });
 
+test('a stray opening quote that joins rows is refused and stores nothing', () => {
+  const db = openLedger(':memory:');
+  const text = `${HEADER}03/08/2026,"Kestrel,6.50\n04/08/2026,Lowtide Grocers,8.00\n05/08/2026,"Marlowe Homewares",20.00\n`;
+  assert.throws(() => importStatement(db, text), NotAStatementError);
+  assert.equal(rowCount(db), 0);
+});
+
+test('a description with a quoted line break is refused and stores nothing', () => {
+  const db = openLedger(':memory:');
+  const text = `${HEADER}03/08/2026,"Kestrel\nCoffee",6.50\n`;
+  assert.throws(() => importStatement(db, text), NotAStatementError);
+  assert.equal(rowCount(db), 0);
+});
+
 function storedRows(db) {
   return db.prepare('SELECT date, description, cents FROM transactions ORDER BY id').all().map((row) => ({ ...row }));
 }
