@@ -12,7 +12,7 @@
 
 **Depends on:** statement-import, PR #5 (branch `feature/statement-import`, head `7640b38`), not yet merged. This slice builds on its code: `openLedger(path)` in `src/lib/ledger.js`, `createApp({ db, statementImport })` in `src/app.js`, and `importStatement(db, text)` in `src/lib/import.js`. Do not start building until that pull request has merged.
 
-**Open director question (data-model):** where the category is stored. This plan builds the recommendation: a nullable `category TEXT` column on `transactions`, added with `ALTER TABLE` only when it is missing, and run only when the flag is on. The column is never added to a real `ledger.db` until the director answers.
+**Decided (data-model):** the director chose a separate table, not a column on `transactions`. The category is kept in `manual_categories (transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id), category TEXT NOT NULL)`, created with `CREATE TABLE IF NOT EXISTS` only when the flag is on. Decision record: `docs/decisions/2026-11-10-where-a-manual-category-is-stored-on-a-transaction.md`. Question `q-edit-transaction-category-1`.
 
 ## Global Constraints
 
@@ -39,25 +39,27 @@
 
 **Interfaces:**
 - Consumes: `openLedger(path)` from `src/lib/ledger.js` (tests only); `labels` from `src/lib/categories.js`.
-- Produces: `ensureCategoryColumn(db: DatabaseSync): void` and `setCategory(db: DatabaseSync, id: number, key: string): { date: string }` in `src/lib/edit.js`. `setCategory` throws `UnknownCategoryError` when `key` is not a key of `labels`, and `TransactionNotFoundError` when no row has `id`. A thrown error writes nothing.
+- Produces: `ensureCategoryTable(db: DatabaseSync): void` and `setCategory(db: DatabaseSync, id: number, key: string): { date: string }` in `src/lib/edit.js`. `ensureCategoryTable` creates `manual_categories` if it is missing. `setCategory` throws `UnknownCategoryError` when `key` is not a key of `labels`, and `TransactionNotFoundError` when no row has `id`. A thrown error writes nothing.
 
 - [ ] **Step 1: Write the failing tests**
 
-In `tests/edit.test.js`, using `openLedger(':memory:')` and one inserted row (`2026-10-14`, `'Greenbarrow Fresh'`, `-1250`):
+In `tests/edit.test.js`, using a `DatabaseSync(':memory:')` with the same `CREATE TABLE transactions` as `src/server.js` and one inserted row (`2026-10-14`, `'Greenbarrow Fresh'`, `-1250`):
 
-- `setCategory stores a valid key and returns the row's date`: `setCategory(db, id, 'eating_out')` returns `{ date: '2026-10-14' }`; the row's `category` is `'eating_out'`.
-- `setCategory refuses an unknown key and stores nothing`: `setCategory(db, id, 'nope')` throws `UnknownCategoryError`; the row's `category` is still `null`.
+- `setCategory stores a valid key and returns the row's date`: `setCategory(db, id, 'eating_out')` returns `{ date: '2026-10-14' }`; `manual_categories` holds `(id, 'eating_out')`.
+- `setCategory replaces an earlier key for the same transaction`: a second call with `'groceries'` leaves one row holding `'groceries'`.
+- `setCategory refuses an unknown key and stores nothing`: `setCategory(db, id, 'nope')` throws `UnknownCategoryError`; `manual_categories` has no row for the id.
 - `setCategory refuses a key in the wrong case`: `setCategory(db, id, 'Groceries')` throws `UnknownCategoryError`.
-- `setCategory refuses an id that is not stored`: `setCategory(db, 999, 'groceries')` throws `TransactionNotFoundError`.
+- `setCategory refuses an id that is not stored`: `setCategory(db, 999, 'groceries')` throws `TransactionNotFoundError`; `manual_categories` is empty.
+- `ensureCategoryTable is safe to call twice`: calling it twice does not throw.
 
 - [ ] **Step 2: Run them and see them fail**
 
 Run: `node --test tests/edit.test.js`
 Expected: FAIL, module not found `src/lib/edit.js`
 
-- [ ] **Step 3: Implement `ensureCategoryColumn` and `setCategory`**
+- [ ] **Step 3: Implement `ensureCategoryTable` and `setCategory`**
 
-`ensureCategoryColumn` reads `PRAGMA table_info(transactions)` and runs `ALTER TABLE transactions ADD COLUMN category TEXT` only when there is no `category` column. `setCategory` checks `Object.hasOwn(labels, key)` before any write, then runs one `UPDATE ... WHERE id = ?`, and reads the row's date with a `SELECT`.
+`ensureCategoryTable` runs `CREATE TABLE IF NOT EXISTS manual_categories (transaction_id INTEGER PRIMARY KEY REFERENCES transactions(id), category TEXT NOT NULL)`. `setCategory` checks `Object.hasOwn(labels, key)` before any write, reads the row's date with a `SELECT`, then runs `INSERT ... ON CONFLICT(transaction_id) DO UPDATE SET category = excluded.category`.
 
 - [ ] **Step 4: Run them and see them pass**
 
@@ -80,8 +82,8 @@ git commit -m "feat: store a category on a transaction"
 - Create: `tests/edit-page.test.js`
 
 **Interfaces:**
-- Consumes: `ensureCategoryColumn` from Task 1; `labels` from `src/lib/categories.js`; `createApp({ db, statementImport })` from `src/app.js`.
-- Produces: `findTransaction(db, id): { id, date, description, cents, category } | undefined` in `src/lib/edit.js`; and `createApp({ db, statementImport, editTransactionCategory })`. `editTransactionCategory` is a boolean; `src/server.js` passes `process.env.EDIT_TRANSACTION_CATEGORY === 'on'`. When it is true, `createApp` calls `ensureCategoryColumn(db)` before serving.
+- Consumes: `ensureCategoryTable` from Task 1; `labels` from `src/lib/categories.js`; `createApp({ db, statementImport })` from `src/app.js`.
+- Produces: `findTransaction(db, id): { id, date, description, cents, category } | undefined` in `src/lib/edit.js`, where `category` comes from a `LEFT JOIN manual_categories` (null when none is set); and `createApp({ db, statementImport, editTransactionCategory })`. `editTransactionCategory` is a boolean; `src/server.js` passes `process.env.EDIT_TRANSACTION_CATEGORY === 'on'`. When it is true, `createApp` calls `ensureCategoryTable(db)` before serving.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -207,7 +209,7 @@ Expected: PASS, every test. Report the files that ran in the report's `tests` fi
 - [ ] **Step 2: Check the flag-off path**
 
 Run: `node --test tests/edit-page.test.js`
-Expected: the flag-off test passes. A test confirms that with `editTransactionCategory: false`, `createApp` does not call `ensureCategoryColumn` and the `transactions` table has no `category` column.
+Expected: the flag-off test passes. A test confirms that with `editTransactionCategory: false`, `createApp` does not call `ensureCategoryTable` and the `manual_categories` table does not exist.
 
 - [ ] **Step 3: Done contract, slice 1**
 
