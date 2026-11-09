@@ -14,12 +14,47 @@ test('the rules list every shop from the spec', () => {
   assert.equal(rules.length, 27);
 });
 
+// The spec's shop-to-category table, copied literally from .wheelhouse/feature/approved.md.
+const specTable = [
+  ['Greenbarrow Fresh', 'groceries'],
+  ['Pennywhistle Market', 'groceries'],
+  ['Lowtide Grocers', 'groceries'],
+  ['Harvest Lane Foods', 'groceries'],
+  ['Pasta, Pizza & Co', 'eating_out'],
+  ['Kestrel Coffee Bar', 'eating_out'],
+  ['Saltbush Noodle House', 'eating_out'],
+  ['Ember Grill', 'eating_out'],
+  ['Waverly Fuel Stop', 'transport'],
+  ['Tramline Fares', 'transport'],
+  ['Lantern Rideshare', 'transport'],
+  ['Northgate Parking', 'transport'],
+  ['Brightfield Power', 'bills'],
+  ['Clearwater Utilities', 'bills'],
+  ['Skyline Broadband', 'bills'],
+  ['Hollis Insurance', 'bills'],
+  ['Marlowe Homewares', 'shopping'],
+  ['Quillon Books', 'shopping'],
+  ['Fernhill Outfitters', 'shopping'],
+  ['Pixel Parade Tech', 'shopping'],
+  ['Larkspur Pharmacy', 'health'],
+  ['Elmgrove Physio', 'health'],
+  ['Cobalt Dental', 'health'],
+  ['Sunnyvale Optical', 'health'],
+  ['Brightwave Payroll', 'income'],
+  ['Tidepool Interest', 'income'],
+  ['Oakridge Dividends', 'income'],
+];
+
 test('each listed shop maps to its category, ignoring case', () => {
-  for (const { shop, category } of rules) {
+  for (const [shop, category] of specTable) {
     assert.equal(categoryFor(shop), category, shop);
     assert.equal(categoryFor(shop.toUpperCase()), category, shop.toUpperCase());
     assert.equal(categoryFor(shop.toLowerCase()), category, shop.toLowerCase());
   }
+});
+
+test('the rules match the spec table exactly', () => {
+  assert.deepEqual(rules.map(({ shop, category }) => [shop, category]), specTable);
 });
 
 test('a shop name with a reference suffix still matches', () => {
