@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  ensureCategoryColumn,
+  ensureCategoryTable,
   setCategory,
   UnknownCategoryError,
   TransactionNotFoundError,
@@ -21,44 +21,54 @@ function insertRow(db) {
   return Number(result.lastInsertRowid);
 }
 
-function categoryOf(db, id) {
-  return db.prepare('SELECT category FROM transactions WHERE id = ?').get(id).category;
+function storedCategories(db) {
+  return db.prepare('SELECT transaction_id, category FROM manual_categories ORDER BY transaction_id').all()
+    .map((row) => ({ ...row }));
 }
 
 test('setCategory stores a valid key and returns the row\'s date', () => {
   const db = freshDb();
   const id = insertRow(db);
-  ensureCategoryColumn(db);
+  ensureCategoryTable(db);
   assert.deepEqual(setCategory(db, id, 'eating_out'), { date: '2026-10-14' });
-  assert.equal(categoryOf(db, id), 'eating_out');
+  assert.deepEqual(storedCategories(db), [{ transaction_id: id, category: 'eating_out' }]);
+});
+
+test('setCategory replaces an earlier key for the same transaction', () => {
+  const db = freshDb();
+  const id = insertRow(db);
+  ensureCategoryTable(db);
+  setCategory(db, id, 'eating_out');
+  setCategory(db, id, 'groceries');
+  assert.deepEqual(storedCategories(db), [{ transaction_id: id, category: 'groceries' }]);
 });
 
 test('setCategory refuses an unknown key and stores nothing', () => {
   const db = freshDb();
   const id = insertRow(db);
-  ensureCategoryColumn(db);
+  ensureCategoryTable(db);
   assert.throws(() => setCategory(db, id, 'nope'), UnknownCategoryError);
-  assert.equal(categoryOf(db, id), null);
+  assert.equal(storedCategories(db).length, 0);
 });
 
 test('setCategory refuses a key in the wrong case', () => {
   const db = freshDb();
   const id = insertRow(db);
-  ensureCategoryColumn(db);
+  ensureCategoryTable(db);
   assert.throws(() => setCategory(db, id, 'Groceries'), UnknownCategoryError);
+  assert.equal(storedCategories(db).length, 0);
 });
 
 test('setCategory refuses an id that is not stored', () => {
   const db = freshDb();
   insertRow(db);
-  ensureCategoryColumn(db);
+  ensureCategoryTable(db);
   assert.throws(() => setCategory(db, 999, 'groceries'), TransactionNotFoundError);
+  assert.equal(storedCategories(db).length, 0);
 });
 
-test('ensureCategoryColumn adds the column once and is safe to call twice', () => {
+test('ensureCategoryTable is safe to call twice', () => {
   const db = freshDb();
-  ensureCategoryColumn(db);
-  ensureCategoryColumn(db);
-  const columns = db.prepare('PRAGMA table_info(transactions)').all();
-  assert.equal(columns.filter((column) => column.name === 'category').length, 1);
+  ensureCategoryTable(db);
+  assert.doesNotThrow(() => ensureCategoryTable(db));
 });
