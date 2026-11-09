@@ -1,5 +1,21 @@
 // src/app.js
 import http from 'node:http';
+import { importStatement, NotAStatementError } from './lib/import.js';
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function importForm() {
+  return `<form method="post" enctype="multipart/form-data" action="/import">
+<label>Bank statement (CSV) <input type="file" name="statement" accept=".csv"></label>
+<button type="submit">Import</button>
+</form>`;
+}
 
 function page(body) {
   return `<!doctype html>
@@ -15,6 +31,36 @@ ${body}
 `;
 }
 
+function sendHtml(res, status, body) {
+  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' });
+  res.end(page(body));
+}
+
+function sendText(res, status, text) {
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end(text);
+}
+
+async function handleImportPost(db, req, res, url) {
+  try {
+    const request = new Request(url, { method: 'POST', headers: req.headers, body: req, duplex: 'half' });
+    const form = await request.formData();
+    const file = form.get('statement');
+    if (!(file instanceof Blob)) {
+      sendHtml(res, 400, '<p>Choose a bank statement (CSV) file to import.</p>');
+      return;
+    }
+    const { added, skipped } = importStatement(db, await file.text());
+    sendHtml(res, 200, `<p>Added ${added}, skipped ${skipped}</p>\n${importForm()}`);
+  } catch (error) {
+    if (error instanceof NotAStatementError) {
+      sendHtml(res, 400, `<p>${escapeHtml(error.message)}</p>\n${importForm()}`);
+      return;
+    }
+    sendText(res, 500, 'Something went wrong');
+  }
+}
+
 export function createApp({ db, statementImport }) {
   return http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -24,6 +70,16 @@ export function createApp({ db, statementImport }) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(page(body));
       return;
+    }
+    if (statementImport && url.pathname === '/import') {
+      if (req.method === 'GET') {
+        sendHtml(res, 200, `<h2>Import a statement</h2>\n${importForm()}`);
+        return;
+      }
+      if (req.method === 'POST') {
+        handleImportPost(db, req, res, url.href);
+        return;
+      }
     }
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('Not found');
